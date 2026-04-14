@@ -33,12 +33,11 @@ describe('Validator Utilities', () => {
     });
 
     it('should throw if environment is invalid', () => {
-      expect(
-        () =>
-          validateConfig({
-            ...validConfig,
-            environment: 'invalid' as unknown as 'sandbox' | 'production',
-          })
+      expect(() =>
+        validateConfig({
+          ...validConfig,
+          environment: 'invalid' as unknown as 'sandbox' | 'production',
+        })
       ).toThrow('environment');
     });
 
@@ -125,9 +124,8 @@ describe('Validator Utilities', () => {
     });
 
     it('should throw if amount is not a number', () => {
-      expect(
-        () =>
-          validatePaymentRequest({ ...validRequest, amount: 'abc' as unknown as number })
+      expect(() =>
+        validatePaymentRequest({ ...validRequest, amount: 'abc' as unknown as number })
       ).toThrow('amount');
     });
 

@@ -37,20 +37,6 @@ npm install esewa-api-wrapper
 
 ---
 
-## 🔧 Environment Setup
-
-Create a `.env` file in your project root:
-
-```env
-ESEWA_MERCHANT_ID=EPAYTEST
-ESEWA_SECRET_KEY=8gBm/:&EnhH.1/q
-ESEWA_ENVIRONMENT=sandbox
-ESEWA_SUCCESS_URL=http://localhost:3000/payment/success
-ESEWA_FAILURE_URL=http://localhost:3000/payment/failure
-```
-
-> ⚠️ **Never commit `.env` to version control.** Add it to `.gitignore`.
-
 ### Sandbox Test Credentials
 
 | Field | Value |
