@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { decodeResponse } from '../src/verification';
+import { describe, it, expect, vi } from 'vitest';
+import { decodeResponse, generateVerificationSignature, verifyPayment } from '../src/verification';
 import { createConfig } from '../src/config';
 import { generateSignature } from '../src/utils/crypto';
 import { encodeBase64Json } from '../src/utils/helpers';
@@ -97,6 +97,84 @@ describe('Verification Module', () => {
       const encoded = encodeBase64Json(payload);
 
       expect(() => decodeResponse(config, encoded)).toThrow(ValidationError);
+    });
+
+    it('should throw ValidationError if a signed field is missing in payload', () => {
+      const signedFieldNames =
+        'transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names';
+      const payload = {
+        transaction_code: '000AWEO',
+        status: 'COMPLETE',
+        total_amount: 1000.0,
+        product_code: 'EPAYTEST',
+        signed_field_names: signedFieldNames,
+      };
+
+      const message = signedFieldNames
+        .split(',')
+        .map((f) => `${f}=${payload[f as keyof typeof payload]}`)
+        .join(',');
+      const signature = generateSignature(message, secretKey);
+      const encoded = encodeBase64Json({ ...payload, signature });
+
+      expect(() => decodeResponse(config, encoded)).toThrow('Signed field');
+    });
+  });
+
+  describe('verifyPayment', () => {
+    it('should verify payment and call status API with query params', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({
+            transaction_code: '000AWEO',
+            status: 'COMPLETE',
+            total_amount: 1000,
+            transaction_uuid: '250610-162413',
+            product_code: 'EPAYTEST',
+          }),
+        } as Response);
+
+      const result = await verifyPayment(config, {
+        transactionUuid: '250610-162413',
+        totalAmount: 1000,
+        productCode: 'EPAYTEST',
+      });
+
+      expect(result.status).toBe('COMPLETE');
+      const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain('transaction_uuid=250610-162413');
+      expect(url).toContain('total_amount=1000');
+      expect(url).toContain('product_code=EPAYTEST');
+      fetchSpy.mockRestore();
+    });
+
+    it('should reject invalid verification request input', async () => {
+      await expect(
+        verifyPayment(config, {
+          transactionUuid: '',
+          totalAmount: 1000,
+          productCode: 'EPAYTEST',
+        })
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('generateVerificationSignature', () => {
+    it('should generate deterministic signature from provided fields', () => {
+      const signedFieldNames = 'total_amount,transaction_uuid,product_code';
+      const fields = {
+        total_amount: 110,
+        transaction_uuid: '241028',
+        product_code: 'EPAYTEST',
+      };
+
+      const signature = generateVerificationSignature(config, fields, signedFieldNames);
+
+      expect(signature).toBe('i94zsd3oXF6ZsSr/kGqT4sSzYQzjj1W/waxjWyRwaME=');
     });
   });
 });

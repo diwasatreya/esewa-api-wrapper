@@ -1,13 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   calculateTotalAmount,
+  createLogger,
+  makeHttpRequest,
   getPaymentUrl,
   getStatusUrl,
   getEnvironmentBaseUrl,
   decodeBase64Json,
   encodeBase64Json,
   maskSensitiveData,
+  sleep,
 } from '../src/utils/helpers';
+import { NetworkError } from '../src/errors';
 import type { PaymentRequest } from '../src/types';
 
 describe('Helper Utilities', () => {
@@ -138,6 +142,116 @@ describe('Helper Utilities', () => {
       const masked = maskSensitiveData(data);
 
       expect(masked).toEqual(data);
+    });
+  });
+
+  describe('makeHttpRequest', () => {
+    it('should send POST body as JSON string when object is provided', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ success: true }),
+        } as Response);
+
+      const result = await makeHttpRequest<{ success: boolean }>({
+        url: 'https://example.com/api',
+        method: 'POST',
+        body: { hello: 'world' },
+        retries: 0,
+      });
+
+      expect(result.success).toBe(true);
+      const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(options.body).toBe(JSON.stringify({ hello: 'world' }));
+      fetchSpy.mockRestore();
+    });
+
+    it('should not retry and should throw on 4xx errors', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue({
+          ok: false,
+          status: 400,
+          statusText: 'Bad Request',
+          text: async () => 'invalid payload',
+        } as Response);
+
+      await expect(
+        makeHttpRequest({
+          url: 'https://example.com/api',
+          method: 'GET',
+          retries: 2,
+          retryDelay: 0,
+        })
+      ).rejects.toThrow(NetworkError);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      fetchSpy.mockRestore();
+    });
+
+    it('should retry transient failures and throw after retries are exhausted', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValue(new Error('temporary network failure'));
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      await expect(
+        makeHttpRequest({
+          url: 'https://example.com/api',
+          method: 'GET',
+          retries: 1,
+          retryDelay: 0,
+        })
+      ).rejects.toThrow('failed after 2 attempts');
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      randomSpy.mockRestore();
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe('createLogger', () => {
+    it('should not log when logger is disabled', () => {
+      const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const logger = createLogger(false);
+
+      logger('info', 'hidden message');
+
+      expect(infoSpy).not.toHaveBeenCalled();
+      infoSpy.mockRestore();
+    });
+
+    it('should use level-specific console methods and mask sensitive values', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const logger = createLogger(true, '[unit]');
+
+      logger('error', 'err', { secretKey: 'super-secret' });
+      logger('warn', 'warn');
+      logger('debug', 'debug');
+      logger('info', 'info');
+
+      expect(errorSpy).toHaveBeenCalledOnce();
+      expect(String(errorSpy.mock.calls[0][0])).toContain('***REDACTED***');
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(debugSpy).toHaveBeenCalledOnce();
+      expect(infoSpy).toHaveBeenCalledOnce();
+
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+      debugSpy.mockRestore();
+      infoSpy.mockRestore();
+    });
+  });
+
+  describe('sleep', () => {
+    it('should resolve after the provided duration', async () => {
+      await expect(sleep(0)).resolves.toBeUndefined();
     });
   });
 });

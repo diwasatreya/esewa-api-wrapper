@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EsewaClient, ValidationError, EsewaError } from '../src';
+import { generateSignature } from '../src/utils/crypto';
+import { encodeBase64Json } from '../src/utils/helpers';
 
 describe('EsewaClient', () => {
   const validConfig = {
@@ -81,8 +83,179 @@ describe('EsewaClient', () => {
   describe('decodeResponse', () => {
     const client = new EsewaClient(validConfig);
 
+    it('should decode a valid response payload', () => {
+      const signedFieldNames =
+        'transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names';
+      const payload = {
+        transaction_code: '000AWEO',
+        status: 'COMPLETE',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+        signed_field_names: signedFieldNames,
+      };
+      const message = signedFieldNames
+        .split(',')
+        .map((field) => `${field}=${payload[field as keyof typeof payload]}`)
+        .join(',');
+      const signature = generateSignature(message, validConfig.secretKey);
+      const encoded = encodeBase64Json({ ...payload, signature });
+
+      const result = client.decodeResponse(encoded);
+      expect(result.status).toBe('COMPLETE');
+      expect(result.transaction_uuid).toBe('250610-162413');
+    });
+
     it('should throw for invalid encoded data', () => {
       expect(() => client.decodeResponse('invalid!!!')).toThrow();
+    });
+  });
+
+  describe('verifyPayment', () => {
+    it('should verify payment via status API', async () => {
+      const client = new EsewaClient(validConfig);
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({
+            transaction_code: '000AWEO',
+            status: 'COMPLETE',
+            total_amount: 1000,
+            transaction_uuid: '250610-162413',
+            product_code: 'EPAYTEST',
+          }),
+        } as Response);
+
+      const result = await client.verifyPayment({
+        transactionUuid: '250610-162413',
+        totalAmount: 1000,
+        productCode: 'EPAYTEST',
+      });
+
+      expect(result.status).toBe('COMPLETE');
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe('webhook proxy methods', () => {
+    it('should verify webhook signature through client method', () => {
+      const client = new EsewaClient(validConfig);
+      const signedFieldNames =
+        'transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names';
+      const payload = {
+        transaction_code: '000AWEO',
+        status: 'COMPLETE',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+        signed_field_names: signedFieldNames,
+      };
+      const message = signedFieldNames
+        .split(',')
+        .map((field) => `${field}=${payload[field as keyof typeof payload]}`)
+        .join(',');
+      const signature = generateSignature(message, validConfig.secretKey);
+
+      const result = client.verifyWebhookSignature({ ...payload, signature });
+
+      expect(result.isValid).toBe(true);
+      expect(result.payload?.status).toBe('COMPLETE');
+    });
+
+    it('should process webhook raw body through client method', () => {
+      const client = new EsewaClient(validConfig);
+      const signedFieldNames =
+        'transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names';
+      const payload = {
+        transaction_code: '000AWEO',
+        status: 'COMPLETE',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+        signed_field_names: signedFieldNames,
+      };
+      const message = signedFieldNames
+        .split(',')
+        .map((field) => `${field}=${payload[field as keyof typeof payload]}`)
+        .join(',');
+      const signature = generateSignature(message, validConfig.secretKey);
+
+      const result = client.processWebhookBody(JSON.stringify({ ...payload, signature }));
+
+      expect(result.isValid).toBe(true);
+      expect(result.payload?.transaction_uuid).toBe('250610-162413');
+    });
+  });
+
+  describe('initiateRefund', () => {
+    const refundRequest = {
+      transactionUuid: '250610-162413',
+      amount: 1000,
+      productCode: 'EPAYTEST',
+    };
+
+    it('should return fully refunded status', async () => {
+      const client = new EsewaClient(validConfig);
+      vi.spyOn(client, 'verifyPayment').mockResolvedValue({
+        transaction_code: '000AWEO',
+        status: 'FULL_REFUND',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+      });
+
+      const result = await client.initiateRefund(refundRequest);
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('FULL_REFUND');
+    });
+
+    it('should return partially refunded status', async () => {
+      const client = new EsewaClient(validConfig);
+      vi.spyOn(client, 'verifyPayment').mockResolvedValue({
+        transaction_code: '000AWEO',
+        status: 'PARTIAL_REFUND',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+      });
+
+      const result = await client.initiateRefund(refundRequest);
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('PARTIAL_REFUND');
+    });
+
+    it('should reject refund for non-complete status', async () => {
+      const client = new EsewaClient(validConfig);
+      vi.spyOn(client, 'verifyPayment').mockResolvedValue({
+        transaction_code: '000AWEO',
+        status: 'PENDING',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+      });
+
+      const result = await client.initiateRefund(refundRequest);
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Cannot refund transaction with status: PENDING');
+    });
+
+    it('should return support message for complete status', async () => {
+      const client = new EsewaClient(validConfig);
+      vi.spyOn(client, 'verifyPayment').mockResolvedValue({
+        transaction_code: '000AWEO',
+        status: 'COMPLETE',
+        total_amount: 1000,
+        transaction_uuid: '250610-162413',
+        product_code: 'EPAYTEST',
+      });
+
+      const result = await client.initiateRefund(refundRequest);
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Refund request registered');
     });
   });
 
