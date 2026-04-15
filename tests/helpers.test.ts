@@ -147,14 +147,12 @@ describe('Helper Utilities', () => {
 
   describe('makeHttpRequest', () => {
     it('should send POST body as JSON string when object is provided', async () => {
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({ success: true }),
-        } as Response);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ success: true }),
+      } as Response);
 
       const result = await makeHttpRequest<{ success: boolean }>({
         url: 'https://example.com/api',
@@ -170,14 +168,12 @@ describe('Helper Utilities', () => {
     });
 
     it('should not retry and should throw on 4xx errors', async () => {
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue({
-          ok: false,
-          status: 400,
-          statusText: 'Bad Request',
-          text: async () => 'invalid payload',
-        } as Response);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () => 'invalid payload',
+      } as Response);
 
       await expect(
         makeHttpRequest({

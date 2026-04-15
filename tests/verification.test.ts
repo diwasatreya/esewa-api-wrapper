@@ -123,20 +123,18 @@ describe('Verification Module', () => {
 
   describe('verifyPayment', () => {
     it('should verify payment and call status API with query params', async () => {
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({
-            transaction_code: '000AWEO',
-            status: 'COMPLETE',
-            total_amount: 1000,
-            transaction_uuid: '250610-162413',
-            product_code: 'EPAYTEST',
-          }),
-        } as Response);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          transaction_code: '000AWEO',
+          status: 'COMPLETE',
+          total_amount: 1000,
+          transaction_uuid: '250610-162413',
+          product_code: 'EPAYTEST',
+        }),
+      } as Response);
 
       const result = await verifyPayment(config, {
         transactionUuid: '250610-162413',

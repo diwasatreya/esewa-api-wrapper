@@ -41,11 +41,12 @@ jobs:
         run: npm run build
 
       - name: Upload coverage
-        if: matrix.node-version == 20
+        if: matrix.node-version == 20 && secrets.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   publish:
     name: Publish to NPM

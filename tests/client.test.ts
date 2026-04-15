@@ -114,20 +114,18 @@ describe('EsewaClient', () => {
   describe('verifyPayment', () => {
     it('should verify payment via status API', async () => {
       const client = new EsewaClient(validConfig);
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({
-            transaction_code: '000AWEO',
-            status: 'COMPLETE',
-            total_amount: 1000,
-            transaction_uuid: '250610-162413',
-            product_code: 'EPAYTEST',
-          }),
-        } as Response);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          transaction_code: '000AWEO',
+          status: 'COMPLETE',
+          total_amount: 1000,
+          transaction_uuid: '250610-162413',
+          product_code: 'EPAYTEST',
+        }),
+      } as Response);
 
       const result = await client.verifyPayment({
         transactionUuid: '250610-162413',
